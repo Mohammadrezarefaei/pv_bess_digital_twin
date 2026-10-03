@@ -37,23 +37,27 @@ if st.sidebar.button("Run MILP Optimization"):
         # PuLP Model
         model = pulp.LpProblem("PV_BESS_Digital_Twin", pulp.LpMaximize)
 
-        # Using LpVariable.dicts for robust and safe variable creation
-        P_charge = pulp.LpVariable.dicts("P_charge", T, lowBound=0.0, upBound=float(bess_power), cat='Continuous')
-        P_discharge = pulp.LpVariable.dicts("P_discharge", T, lowBound=0.0, upBound=float(bess_power), cat='Continuous')
-        SOC = pulp.LpVariable.dicts("SOC", T, lowBound=0.5, upBound=float(bess_energy), cat='Continuous')
-        u_charge = pulp.LpVariable.dicts("u_charge", T, cat='Binary')
-        u_discharge = pulp.LpVariable.dicts("u_discharge", T, cat='Binary')
+        # Robust dictionary comprehension for variables
+        bp = float(bess_power)
+        be = float(bess_energy)
+        init_s = float(initial_soc)
+
+        P_charge = {t: pulp.LpVariable(f"P_charge_{t}", lowBound=0.0, upBound=bp, cat='Continuous') for t in T}
+        P_discharge = {t: pulp.LpVariable(f"P_discharge_{t}", lowBound=0.0, upBound=bp, cat='Continuous') for t in T}
+        SOC = {t: pulp.LpVariable(f"SOC_{t}", lowBound=0.5, upBound=be, cat='Continuous') for t in T}
+        u_charge = {t: pulp.LpVariable(f"u_charge_{t}", cat='Binary') for t in T}
+        u_discharge = {t: pulp.LpVariable(f"u_discharge_{t}", cat='Binary') for t in T}
 
         revenue_expr = pulp.lpSum([(solar[t] + P_discharge[t] - P_charge[t]) * prices[t] for t in T])
         degradation_penalty = pulp.lpSum([(P_charge[t] + P_discharge[t]) * 1.5 for t in T])
         model += revenue_expr - degradation_penalty
 
-        model += SOC[0] == float(initial_soc)
+        model += SOC[0] == init_s
 
         for t in T:
             model += u_charge[t] + u_discharge[t] <= 1
-            model += P_charge[t] <= float(bess_power) * u_charge[t]
-            model += P_discharge[t] <= float(bess_power) * u_discharge[t]
+            model += P_charge[t] <= bp * u_charge[t]
+            model += P_discharge[t] <= bp * u_discharge[t]
             
             if t > 0:
                 model += SOC[t] == SOC[t-1] + (0.95 * P_charge[t] - (1 / 0.95) * P_discharge[t])
