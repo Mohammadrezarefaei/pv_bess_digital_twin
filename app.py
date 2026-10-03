@@ -23,7 +23,7 @@ initial_soc = st.sidebar.slider("Initial State of Charge (MWh)", 0.5, bess_energ
 # Run Simulation Button
 if st.sidebar.button("Run MILP Optimization"):
     with st.spinner("Solving Mixed-Integer Linear Programming model..."):
-        T = range(24)
+        T = list(range(24))
         
         # Synthetic weather & prices
         np.random.seed(42)
@@ -34,21 +34,15 @@ if st.sidebar.button("Run MILP Optimization"):
         prices = 50 + 20 * np.sin(2 * np.pi * np.array(T) / 24) + np.random.normal(0, 5, 24)
         prices[17:21] += 40
 
-        # PuLP Model with explicit variable initialization
+        # PuLP Model
         model = pulp.LpProblem("PV_BESS_Digital_Twin", pulp.LpMaximize)
 
-        P_charge = {}
-        P_discharge = {}
-        SOC = {}
-        u_charge = {}
-        u_discharge = {}
-
-        for t in T:
-            P_charge[t] = pulp.LpVariable(f"P_charge_{t}", lowBound=0, upBound=float(bess_power))
-            P_discharge[t] = pulp.LpVariable(f"P_discharge_{t}", lowBound=0, upBound=float(bess_power))
-            SOC[t] = pulp.LpVariable(f"SOC_{t}", lowBound=0.5, upBound=float(bess_energy))
-            u_charge[t] = pulp.LpVariable(f"u_charge_{t}", cat='Binary')
-            u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}", cat='Binary')
+        # Using LpVariable.dicts for robust and safe variable creation
+        P_charge = pulp.LpVariable.dicts("P_charge", T, lowBound=0.0, upBound=float(bess_power), cat='Continuous')
+        P_discharge = pulp.LpVariable.dicts("P_discharge", T, lowBound=0.0, upBound=float(bess_power), cat='Continuous')
+        SOC = pulp.LpVariable.dicts("SOC", T, lowBound=0.5, upBound=float(bess_energy), cat='Continuous')
+        u_charge = pulp.LpVariable.dicts("u_charge", T, cat='Binary')
+        u_discharge = pulp.LpVariable.dicts("u_discharge", T, cat='Binary')
 
         revenue_expr = pulp.lpSum([(solar[t] + P_discharge[t] - P_charge[t]) * prices[t] for t in T])
         degradation_penalty = pulp.lpSum([(P_charge[t] + P_discharge[t]) * 1.5 for t in T])
