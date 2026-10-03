@@ -34,25 +34,32 @@ if st.sidebar.button("Run MILP Optimization"):
         prices = 50 + 20 * np.sin(2 * np.pi * np.array(T) / 24) + np.random.normal(0, 5, 24)
         prices[17:21] += 40
 
-        # PuLP Model
+        # PuLP Model with explicit variable initialization
         model = pulp.LpProblem("PV_BESS_Digital_Twin", pulp.LpMaximize)
 
-        P_charge = {t: pulp.LpVariable(f"P_charge_{t}", lowBound=0, upBound=bess_power) for t in T}
-        P_discharge = {t: pulp.LpVariable(f"P_discharge_{t}", lowBound=0, upBound=bess_power) for t in T}
-        SOC = {t: pulp.LpVariable(f"SOC_{t}", lowBound=0.5, upBound=bess_energy) for t in T}
-        u_charge = {t: pulp.LpVariable(f"u_charge_{t}", cat='Binary') for t in T}
-        u_discharge = {t: pulp.LpVariable(f"u_discharge_{t}", cat='Binary') for t in T}
+        P_charge = {}
+        P_discharge = {}
+        SOC = {}
+        u_charge = {}
+        u_discharge = {}
+
+        for t in T:
+            P_charge[t] = pulp.LpVariable(f"P_charge_{t}", lowBound=0, upBound=float(bess_power))
+            P_discharge[t] = pulp.LpVariable(f"P_discharge_{t}", lowBound=0, upBound=float(bess_power))
+            SOC[t] = pulp.LpVariable(f"SOC_{t}", lowBound=0.5, upBound=float(bess_energy))
+            u_charge[t] = pulp.LpVariable(f"u_charge_{t}", cat='Binary')
+            u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}", cat='Binary')
 
         revenue_expr = pulp.lpSum([(solar[t] + P_discharge[t] - P_charge[t]) * prices[t] for t in T])
         degradation_penalty = pulp.lpSum([(P_charge[t] + P_discharge[t]) * 1.5 for t in T])
         model += revenue_expr - degradation_penalty
 
-        model += SOC[0] == initial_soc
+        model += SOC[0] == float(initial_soc)
 
         for t in T:
             model += u_charge[t] + u_discharge[t] <= 1
-            model += P_charge[t] <= bess_power * u_charge[t]
-            model += P_discharge[t] <= bess_power * u_discharge[t]
+            model += P_charge[t] <= float(bess_power) * u_charge[t]
+            model += P_discharge[t] <= float(bess_power) * u_discharge[t]
             
             if t > 0:
                 model += SOC[t] == SOC[t-1] + (0.95 * P_charge[t] - (1 / 0.95) * P_discharge[t])
